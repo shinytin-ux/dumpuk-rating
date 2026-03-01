@@ -113,7 +113,16 @@ export default function App() {
   const [adminAuthed, setAdminAuthed] = useState(false);
   const [adminFilter, setAdminFilter] = useState("all");
 
-  useEffect(() => { loadReviews(); }, []);
+  useEffect(() => {
+    loadReviews();
+    // URL 파라미터로 특정 꾸러미 직접 진입 (?bundle=A01 등)
+    const params = new URLSearchParams(window.location.search);
+    const bundleParam = params.get("bundle");
+    if (bundleParam && BUNDLES.find(b => b.id === bundleParam)) {
+      setCurrent(bundleParam);
+      setPage("detail");
+    }
+  }, []);
 
   async function loadReviews() {
     setLoading(true);
