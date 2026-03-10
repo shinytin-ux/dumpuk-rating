@@ -98,6 +98,7 @@ function toDay() {
 
 export default function App() {
   const [allReviews, setAllReviews] = useState({});
+  const [loanStatus, setLoanStatus] = useState({});
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState("list");
   const [current, setCurrent] = useState(null);
@@ -112,10 +113,11 @@ export default function App() {
   const [adminError, setAdminError] = useState(false);
   const [adminAuthed, setAdminAuthed] = useState(false);
   const [adminFilter, setAdminFilter] = useState("all");
+  const [loanSaving, setLoanSaving] = useState(false);
 
   useEffect(() => {
     loadReviews();
-    // URL 파라미터로 특정 꾸러미 직접 진입 (?bundle=A01 등)
+    loadLoanStatus();
     const params = new URLSearchParams(window.location.search);
     const bundleParam = params.get("bundle");
     if (bundleParam && BUNDLES.find(b => b.id === bundleParam)) {
@@ -134,6 +136,36 @@ export default function App() {
       setAllReviews({});
     }
     setLoading(false);
+  }
+
+  async function loadLoanStatus() {
+    try {
+      const res = await fetch("/api/getLoanStatus");
+      const data = await res.json();
+      setLoanStatus(data);
+    } catch { setLoanStatus({}); }
+  }
+
+  async function saveLoanStatus(newStatus) {
+    setLoanSaving(true);
+    try {
+      const res = await fetch("/api/setLoanStatus", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: ADMIN_PW, status: newStatus }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      showToast("대출 상태가 저장되었습니다 ✅");
+    } catch { showToast("저장 중 오류가 발생했습니다."); }
+    setLoanSaving(false);
+  }
+
+  function toggleLoan(bundleId) {
+    const cur = loanStatus[bundleId] || "available";
+    const newStatus = { ...loanStatus, [bundleId]: cur === "available" ? "loaned" : "available" };
+    setLoanStatus(newStatus);
+    saveLoanStatus(newStatus);
   }
 
   function showToast(msg) { setToast(msg); setTimeout(()=>setToast(""),2500); }
@@ -247,6 +279,41 @@ export default function App() {
                 ))}
               </div>
             </div>
+
+            {/* 대출 상태 관리 */}
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"16px 18px",marginBottom:20}}>
+              <div style={{fontFamily:"'Noto Serif KR',serif",fontSize:"0.92rem",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
+                📋 꾸러미 대출 상태 관리
+                {loanSaving&&<span style={{fontSize:"0.72rem",color:C.muted}}>저장 중...</span>}
+              </div>
+              {[["adult","일반"],["youth","청소년"]].map(([cat,catLabel])=>(
+                <div key={cat} style={{marginBottom:12}}>
+                  <div style={{fontSize:"0.72rem",fontWeight:600,color:C.muted,marginBottom:6,
+                    paddingBottom:4,borderBottom:`1px solid ${C.border}`}}>{catLabel}</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:6}}>
+                    {BUNDLES.filter(b=>b.category===cat).map(b=>{
+                      const isAvail=(loanStatus[b.id]||"available")==="available";
+                      return (
+                        <button key={b.id} onClick={()=>toggleLoan(b.id)}
+                          style={{display:"flex",alignItems:"center",gap:6,padding:"7px 10px",
+                            borderRadius:8,border:`1px solid ${isAvail?"#b8ddc8":"#f5c0b8"}`,
+                            background:isAvail?"#e8f5ee":"#fdf0ee",cursor:"pointer",
+                            fontFamily:"inherit",textAlign:"left",transition:"all 0.15s"}}>
+                          <span style={{fontSize:"0.9rem"}}>{b.emoji}</span>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:"0.68rem",color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.label}</div>
+                            <div style={{fontSize:"0.72rem",fontWeight:600,color:isAvail?"#2e7d4e":C.red,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                              {isAvail?"🟢 대출 가능":"🔴 대출 중"}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              <div style={{fontSize:"0.7rem",color:C.muted,marginTop:6}}>버튼을 클릭하면 상태가 즉시 전환·저장됩니다</div>
+            </div>
             {adminList.length===0
               ? <div style={{textAlign:"center",padding:30,color:C.muted,fontSize:"0.85rem"}}>후기가 없습니다.</div>
               : adminList.map(r=>(
@@ -296,13 +363,22 @@ export default function App() {
                   onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.boxShadow="none";e.currentTarget.style.transform="none";}}>
                   <div style={{fontSize:"1.8rem",width:40,textAlign:"center",flexShrink:0}}>{b.emoji}</div>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2,flexWrap:"wrap"}}>
                       <span style={{fontSize:"0.65rem",padding:"1px 6px",borderRadius:8,fontWeight:500,
                         background:isY?C.youthBg:"#f5ede0",color:isY?C.youth:C.accent2,
                         border:`1px solid ${isY?"#c8e0d0":"#e8cfa0"}`}}>{b.label}</span>
                       <span style={{fontWeight:700,fontSize:"0.95rem"}}>{b.name}</span>
                     </div>
-                    <div style={{fontSize:"0.72rem",color:C.muted,marginBottom:4}}>도서 {b.books.length}권</div>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                      <div style={{display:"inline-flex",alignItems:"center",gap:3,
+                        fontSize:"0.68rem",padding:"1px 7px",borderRadius:8,fontWeight:600,
+                        background:(loanStatus[b.id]||"available")==="available"?"#e8f5ee":"#fdf0ee",
+                        color:(loanStatus[b.id]||"available")==="available"?"#2e7d4e":C.red,
+                        border:`1px solid ${(loanStatus[b.id]||"available")==="available"?"#b8ddc8":"#f5c0b8"}`}}>
+                        {(loanStatus[b.id]||"available")==="available"?"🟢 대출 가능":"🔴 대출 중"}
+                      </div>
+                      <span style={{fontSize:"0.72rem",color:C.muted}}>도서 {b.books.length}권</span>
+                    </div>
                     <div style={{display:"flex",alignItems:"center",gap:5}}>
                       {a?(<><Stars value={parseFloat(a)} size={12}/>
                         <span style={{fontSize:"0.75rem",color:C.accent2,fontWeight:600}}>★ {a}</span>
@@ -332,6 +408,15 @@ export default function App() {
                 color:bundle.category==="youth"?C.youth:C.accent2,
                 border:`1px solid ${bundle.category==="youth"?"#c8e0d0":"#e8cfa0"}`,
                 marginBottom:6,fontWeight:500}}>{bundle.label}</div>
+              <div style={{marginBottom:10}}>
+                <div style={{display:"inline-flex",alignItems:"center",gap:4,
+                  fontSize:"0.8rem",padding:"4px 12px",borderRadius:12,fontWeight:600,
+                  background:(loanStatus[current]||"available")==="available"?"#e8f5ee":"#fdf0ee",
+                  color:(loanStatus[current]||"available")==="available"?"#2e7d4e":C.red,
+                  border:`1px solid ${(loanStatus[current]||"available")==="available"?"#b8ddc8":"#f5c0b8"}`}}>
+                  {(loanStatus[current]||"available")==="available"?"🟢 대출 가능":"🔴 현재 대출 중"}
+                </div>
+              </div>
               <div style={{fontFamily:"'Noto Serif KR',serif",fontSize:"1.25rem",fontWeight:700,marginBottom:10}}>{bundle.name}</div>
               {avg?(<>
                 <div style={{fontSize:"2rem",fontWeight:700,color:C.accent,lineHeight:1,marginBottom:4}}>★ {avg}</div>
